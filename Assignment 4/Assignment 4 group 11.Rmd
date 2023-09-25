@@ -1,0 +1,184 @@
+---
+title: "Assignment 4 group 11"
+author: "Martina Barni, Guerino Figlino, Alberto Noce, Flavia Ungarelli"
+date: "2023-04-24"
+
+output:
+  pdf_document: default
+  html_document:
+    fig_height: 6
+    
+header-includes:
+   - \usepackage{floatrow}
+   - \floatsetup[figure]{capposition=top}
+   - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.align = "center")
+
+library(dlm)
+library(ggplot2)
+library(tidyverse)
+```
+
+We consider the data on the annual flow of the river Nile at Ashwan between 1871 and 1970, plotted in Figure \ref{fig:Nile}.
+
+```{r Nile, echo=FALSE, fig.cap = "Flow of the Nile river at Aswan", out.width = '70%', fig.align = "center"}
+plot(Nile, ylab="Nile river flow", cex.main=0.3)
+```
+
+We observe that the time series is non-stationary but that it presents an evident change point around 1898. Therefore, we use a *local level* model to capture the main change point and other minor changes. We consider the following model:
+\begin{eqnarray*}
+y_t = \theta_t + v_t \quad    & v_t \sim N(0,V) \\
+\theta_t = \theta_{t-1} + w_t \quad   & w_t \sim N(0, W)
+\end{eqnarray*}
+
+To start, we assume that $V=\sigma^2_v=15100$ and $W=\sigma^2_w=1470$ and we let $\theta_0 \sim N(1000, 1000)$ be the initial distribution.
+
+\newpage
+**Exercise 1:**
+
+We compute and plot (Figure \ref{fig:Filt_est}) the filtering states estimates $m_t=E(\theta_0|y_{1:t})$, for **t**=1,2,...,T.
+
+```{r Filt_est, echo=FALSE, fig.cap= "Estimated states", out.width = '70%', fig.align = "center"}
+mod <- dlmModPoly(1,dV=15100, dW=1470, m0=1000, C0=1000)
+outFilt <- dlmFilter(Nile,mod)
+
+filterEstimates= window(outFilt$m,start=start(Nile)[1])
+
+par(mar = c(4, 4, 4, 4) + 0.1, cex = 0.8)
+plot(Nile, y = NULL, ylab = "Nile annual flow", plot.type = "multiple", type = "o", cex = 0.3)
+lines(filterEstimates, col="red", type="o",lty=2, pch=4, cex = 0.3)
+legend("bottomright",legend=c("data","filtering level"), col = c("black", "red"), lty=c(1,2), pch=c(1,4))
+```
+
+We also compute ane plot (Figure \ref{fig:Std}) the corresponding standard deviations:
+$$\sqrt{C_t}= V(\theta_t|y_{1:t})^{1/2}$$
+
+```{r Std, echo=FALSE, fig.cap= "Standard deviation on the filtering estimates", out.width = '70%', fig.align = "center",}
+listC <- dlmSvd2var(outFilt$U.C, outFilt$D.C)
+sqrtC <- sqrt(unlist(listC))
+
+par(mar = c(4, 4, 4, 4) + 0.1, cex = 0.8)
+ts.plot(sqrtC[-1], ylab="Standard deviation")
+```
+
+We find that the standard deviation does not converge to zero but rather to approximately 63.5.
+
+We plot the data together with the filtering state estimates and their 0.95 credible intervals (Figure \ref{fig:Filt_est_ci}):
+```{r Filt_est_ci, echo=FALSE, fig.cap= "Filtering state estimates", out.width = '70%', fig.align = "center",}
+ci95_low <- outFilt$m + qnorm((1-0.95)/2) * sqrtC
+ci95_up <- outFilt$m - qnorm((1-0.95)/2) * sqrtC
+
+par(mar = c(4, 4, 4, 4) + 0.1, cex = 0.8)
+plot(Nile,type="o", col="black", ylab="Nile river flow")
+lines(filterEstimates, type="o",lty=2, pch=4, col="red")
+lines(ci95_low, lty = "longdash", col="blue")
+lines(ci95_up, lty = "longdash", col="blue")
+legend("bottomleft",legend=c("data","filtering level","95% c.i."),
+	 col=c("black", "red","blue"),lty=c(1,2,2),pch=c(1,4,20))
+```
+
+**Exercise 2:**
+
+We compute the one-step ahead forecasts: $f_t=E(Y_t|y_{1:t-1}), \; t=1,...,T.$
+```{r, include=FALSE}
+filterForecasts= window(outFilt$f,start=start(Nile)[1])
+```
+We plot the data, together with the one-step ahead forecasts and their 0.95 credible intervals (Figure \ref{fig:forecasts}).
+
+```{r forecasts, echo=FALSE, fig.cap= "One-step ahead forecasts", out.width = '70%', fig.align = "center",}
+listR <- dlmSvd2var(outFilt$U.R, outFilt$D.R)
+sqrtQ <- sqrt(unlist(listR)+15100)
+
+ci95_lowf <- outFilt$f + qnorm((1-0.95)/2)* sqrtQ
+ci95_upf <- outFilt$f - qnorm((1-0.95)/2) * sqrtQ
+
+
+par(mar = c(4, 4, 4, 4) + 0.1, cex = 0.8)
+plot(window(Nile, start=start(Nile)), type="o", ylab="Nile rivel flow", cex=.3, col="black", ylim=c(400,1500)) 
+lines(window(outFilt$f, start=start(Nile)), type="o", col="red", cex=.3)
+lines(ci95_lowf, lty = "longdash", col="blue")
+lines(ci95_upf, lty = "longdash", col="blue")
+legend("bottomleft",legend=c("data","filtering level","95% c.i."),
+	 col=c("black", "red","blue"),lty=c(1,2,2),pch=c(1,4,20))
+```
+
+**Exercise 3**
+
+The signal-to-noise ratio (i.e. the ratio $\sigma^2_w/\sigma^2_v$) affects the forecasts, as it represents the weight given to observed data in the filtering step.
+
+We repeat the excercise with different choices of V (observation variance) and W (evolution variance).
+
+We use the following command to experiment with different values:
+
+V <- sample(1:15100, 1)
+
+W <- sample(1:1470, 1)
+
+```{r include=FALSE}
+V <- sample(1:15100, 1)
+W <- sample(1:1470, 1)
+```
+For example
+
+If V is:
+```{r echo=FALSE}
+V
+```
+
+and W is:
+```{r echo=FALSE}
+W
+```
+We obtain the following:
+
+```{r, echo=FALSE, out.width = '70%', fig.align = "center",}
+mod <- dlmModPoly(1,dV=V, dW=W, m0=1000, C0=1000)
+outFilt <- dlmFilter(Nile,mod)
+
+filterEstimates= window(outFilt$m,start=start(Nile)[1])
+
+par(mar = c(4, 4, 4, 4) + 0.1, cex = 0.8)
+plot(Nile, y = NULL, plot.type = "multiple", ylab = "Nile annual flow", main="Estimated states", type = "o", cex = 0.3)
+lines(filterEstimates, col="green", type="o",lty=2, pch=4, cex = 0.3)
+legend("bottomright",legend=c("data","filtered level"), col = c("black", "green"), lty=c(1,2), pch=c(1,4))
+
+listC <- dlmSvd2var(outFilt$U.C, outFilt$D.C)
+sqrtC <- sqrt(unlist(listC))
+
+par(mar = c(4, 4, 4, 4) + 0.1, cex = 0.8)
+ts.plot(sqrtC[-1], ylab="Standard deviation", main="Standard deviation on the filtering estimates")
+
+ci95_low <- outFilt$m + qnorm((1-0.95)/2) * sqrtC
+ci95_up <- outFilt$m - qnorm((1-0.95)/2) * sqrtC
+
+par(mar = c(4, 4, 4, 4) + 0.1, cex = 0.8)
+plot(Nile,type="o", col="black", ylab="Nile river flow")
+lines(filterEstimates, type="o",lty=2, pch=4, col="green")
+lines(ci95_low, lty = "longdash", col="blue")
+lines(ci95_up, lty = "longdash", col="blue")
+legend("bottomleft",legend=c("data","filtereing level","95% c.i."),
+	 col=c("black", "green","blue"),lty=c(1,2,2),pch=c(1,4,20))
+title(main="Data, filtering estimates and confidence intervals")
+
+listR <- dlmSvd2var(outFilt$U.R, outFilt$D.R)
+sqrtQ <- sqrt(unlist(listR)+V)
+
+ci95_lowf <- outFilt$f + qnorm((1-0.95)/2)* sqrtQ
+ci95_upf <- outFilt$f - qnorm((1-0.95)/2) * sqrtQ
+
+par(mar = c(4, 4, 4, 4) + 0.1, cex = 0.8)
+plot(window(Nile, start=start(Nile)), type="o", ylab="Nile rivel flow", cex=.3, col="black", ylim=c(400,1500)) 
+lines(window(outFilt$f, start=start(Nile)), type="o", col="green", cex=.3)
+lines(ci95_lowf, lty = "longdash", col="blue")
+lines(ci95_upf, lty = "longdash", col="blue")
+legend("bottomleft",legend=c("data","filtereing level","95% c.i."),
+	 col=c("black", "green","blue"),lty=c(1,2,2),pch=c(1,4,20))
+title(main="Data, one-step ahead forecasts and confidence intervals")
+```
+
+Comment:
+
